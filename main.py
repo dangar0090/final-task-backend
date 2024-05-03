@@ -41,6 +41,10 @@ def get_real_ip():
         # Take the first IP in the list
         return request.headers['X-Forwarded-For'].split(',')[0].strip()
     return request.remote_addr
+    
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'ok'}), 200
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
