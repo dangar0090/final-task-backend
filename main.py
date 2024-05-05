@@ -32,6 +32,24 @@ conn = psycopg2.connect(
 )
 cursor = conn.cursor()
 
+# Create users table if not exists
+try:
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS public.users
+        (
+            filename character varying(255) NOT NULL,
+            "user-ip" cidr NOT NULL,
+            extension character varying(255) NOT NULL,
+            "file-size" integer NOT NULL,
+            PRIMARY KEY (filename),
+            UNIQUE (filename)
+        )
+    """)
+    conn.commit()
+except Exception as create_table_error:
+    conn.rollback()
+    app.logger.error(f"Error creating table: {str(create_table_error)}")
+
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.zip', '.doc', '.docx', '.odt', '.ods', '.odp'}
 
