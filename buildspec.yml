@@ -9,13 +9,13 @@ phases:
   build:
     commands:
       - echo "Building Docker image"
-      - docker build -t $IMAGE_NAME:$IMAGE_TAG .
-      - docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
+      - docker build -t $IMAGE_NAME:$CODEBUILD_RESOLVED_SOURCE_VERSION .
+      - docker tag $IMAGE_NAME:$CODEBUILD_RESOLVED_SOURCE_VERSION $IMAGE_NAME:latest
 
   post_build:
     commands:
       - echo "Pushing Docker image to Amazon ECR"
-      - docker push $IMAGE_NAME:$IMAGE_TAG
+      - docker push $IMAGE_NAME:$CODEBUILD_RESOLVED_SOURCE_VERSION
       - docker push $IMAGE_NAME:latest
       - echo "[{\"name\":\"task-app\",\"imageUri\":\"$IMAGE_NAME:latest\"}]" > imagedefinitions.json
 
