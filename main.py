@@ -49,7 +49,14 @@ try:
 except Exception as e:
     logger.error("Error setting up environment variables: {}".format(str(e)))
     raise e
-
+#AWS S3 Configuration    
+s3 = boto3.client(
+    's3',
+    region_name='us-east-1',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+)
+bucket_name = os.getenv('S3_BUCKET_NAME')
 # Database configuration
 conn = psycopg2.connect(
     host=os.getenv('DB_HOST'),
@@ -99,32 +106,29 @@ def upload_file():
         user_ip = get_real_ip()
         file_size = os.fstat(file.fileno()).st_size
         filename, file_extension = os.path.splitext(file.filename)
-
         # Check if the file extension is allowed
         if file_extension.lower() not in ALLOWED_EXTENSIONS:
-            return jsonify({"error": "Extension '{}' is not allowed".format(file_extension)}), 400
-
+            return jsonify({"error": f"Extension '{file_extension}' is not allowed"}), 400
+        # Upload to S3
+        s3.upload_fileobj(file, bucket_name, file.filename)
         # Insert into DB
         try:
             cursor.execute(
                 sql.SQL("INSERT INTO public.users (filename, \"user-ip\", extension, \"file-size\") VALUES (%s, %s, %s, %s)")
                     .format(),
-                (filename, "{}/32".format(user_ip), file_extension, file_size)
+                (filename, f"{user_ip}/32", file_extension, file_size)
             )
             conn.commit()
             return jsonify({"message": "File uploaded successfully"}), 200
-
         except errors.UniqueViolation:
             conn.rollback()
             return jsonify({"error": "Duplicate filename found"}), 409
-
         except Exception as db_error:
             conn.rollback()
-            logger.error("Database error: {}".format(str(db_error)))
+            app.logger.error(f"Database error: {str(db_error)}")
             return jsonify({"error": str(db_error)}), 500
-
     except Exception as e:
-        logger.error("Error uploading file: {}".format(str(e)))
+        app.logger.error(f"Error uploading file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
