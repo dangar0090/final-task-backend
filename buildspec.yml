@@ -4,19 +4,20 @@ phases:
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR..."
-      - aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+      - aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin 730335565545.dkr.ecr.us-east-1.amazonaws.com
 
   build:
     commands:
       - echo "Building Docker image"
-      - docker build -t task-backend-repo .
-      - docker tag $IMAGE_NAME:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$IMAGE_NAME:latest
+      - docker build -t $IMAGE_NAME:$IMAGE_TAG .
+      - docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
 
   post_build:
     commands:
       - echo "Pushing Docker image to Amazon ECR"
-      - docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$IMAGE_NAME:latest
-      - echo "[{\"name\":\"task-app\",\"imageUri\":\"$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$IMAGE_NAME:latest\"}]" > imagedefinitions.json
+      - docker push $IMAGE_NAME:$IMAGE_TAG
+      - docker push $IMAGE_NAME:latest
+      - echo "[{\"name\":\"task-app\",\"imageUri\":\"$IMAGE_NAME:latest\"}]" > imagedefinitions.json
 
 artifacts:
   files:
