@@ -1,54 +1,54 @@
 import os
 import json
 import boto3
+import logging
 from flask import Flask, request, jsonify
 import psycopg2
 from psycopg2 import sql, errors
 from flask_cors import CORS
-from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
+from botocore.exceptions import ClientError
 
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
-# AWS Secrets Manager configuration
-client = boto3.client('secretsmanager', region_name='us-east-1')  # Replace 'your-region' with your AWS region
-cache_config = SecretCacheConfig()
-cache = SecretCache(config=cache_config, client=client)
+# Initialize logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-# Fetch secret from AWS Secrets Manager
+# Define a function to get secrets from AWS Secrets Manager
+def get_secret(secret_name):
+    region_name = "us-east-1"  # Specify your region
+
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        logger.error("Error fetching secret '{}': {}".format(secret_name, str(e)))
+        raise e
+
+    secret = get_secret_value_response['SecretString']
+    return json.loads(secret)
+
+# Fetch secrets from AWS Secrets Manager
+secret_name = 'env-backend-to-db'  # Specify your secret name
 try:
-    secret = cache.get_secret_string('env-backend-to-db')
-    secret_dict = json.loads(secret)
-    os.environ['AWS_ACCESS_KEY_ID'] = secret_dict['AWS_ACCESS_KEY_ID']
-    os.environ['AWS_SECRET_ACCESS_KEY'] = secret_dict['AWS_SECRET_ACCESS_KEY']
-    os.environ['DB_HOST'] = secret_dict['DB_HOST']
-    os.environ['DB_PORT'] = secret_dict['DB_PORT']
-    os.environ['DB_NAME'] = secret_dict['DB_NAME']
-    os.environ['DB_USER'] = secret_dict['DB_USER']
-    os.environ['DB_PASSWORD'] = secret_dict['DB_PASSWORD']
-    os.environ['S3_BUCKET_NAME'] = secret_dict['S3_BUCKET_NAME']
-
+    secret_dict = get_secret(secret_name)
+    for key, value in secret_dict.items():
+        if isinstance(value, str):
+            # Set environment variables
+            os.environ[key] = value
 except Exception as e:
-    print(f"Error fetching secret: {str(e)}")
+    logger.error("Error setting up environment variables: {}".format(str(e)))
     raise e
-
-# Continue with the rest of your code...
-
-# Load environment variables
-# Removed this part as secrets are fetched from AWS Secrets Manager now
-
-app = Flask(__name__)
-CORS(app)
-
-# AWS S3 configuration
-s3 = boto3.client(
-    's3',
-    region_name='us-east-1',
-    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-)
-
-bucket_name = os.getenv('S3_BUCKET_NAME')
 
 # Database configuration
 conn = psycopg2.connect(
@@ -76,7 +76,7 @@ try:
     conn.commit()
 except Exception as create_table_error:
     conn.rollback()
-    app.logger.error(f"Error creating table: {str(create_table_error)}")
+    logger.error("Error creating table: {}".format(str(create_table_error)))
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.zip', '.doc', '.docx', '.odt', '.ods', '.odp'}
@@ -102,17 +102,14 @@ def upload_file():
 
         # Check if the file extension is allowed
         if file_extension.lower() not in ALLOWED_EXTENSIONS:
-            return jsonify({"error": f"Extension '{file_extension}' is not allowed"}), 400
-
-        # Upload to S3
-        s3.upload_fileobj(file, bucket_name, file.filename)
+            return jsonify({"error": "Extension '{}' is not allowed".format(file_extension)}), 400
 
         # Insert into DB
         try:
             cursor.execute(
                 sql.SQL("INSERT INTO public.users (filename, \"user-ip\", extension, \"file-size\") VALUES (%s, %s, %s, %s)")
                     .format(),
-                (filename, f"{user_ip}/32", file_extension, file_size)
+                (filename, "{}/32".format(user_ip), file_extension, file_size)
             )
             conn.commit()
             return jsonify({"message": "File uploaded successfully"}), 200
@@ -123,11 +120,11 @@ def upload_file():
 
         except Exception as db_error:
             conn.rollback()
-            app.logger.error(f"Database error: {str(db_error)}")
+            logger.error("Database error: {}".format(str(db_error)))
             return jsonify({"error": str(db_error)}), 500
 
     except Exception as e:
-        app.logger.error(f"Error uploading file: {str(e)}")
+        logger.error("Error uploading file: {}".format(str(e)))
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
