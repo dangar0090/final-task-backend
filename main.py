@@ -1,13 +1,41 @@
 import os
-from dotenv import load_dotenv
+import json
 import boto3
 from flask import Flask, request, jsonify
 import psycopg2
 from psycopg2 import sql, errors
 from flask_cors import CORS
+from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
+
+app = Flask(__name__)
+CORS(app)
+
+# AWS Secrets Manager configuration
+client = boto3.client('secretsmanager', region_name='us-east-1')  # Replace 'your-region' with your AWS region
+cache_config = SecretCacheConfig()
+cache = SecretCache(config=cache_config, client=client)
+
+# Fetch secret from AWS Secrets Manager
+try:
+    secret = cache.get_secret_string('env-backend-to-db')
+    secret_dict = json.loads(secret)
+    os.environ['AWS_ACCESS_KEY_ID'] = secret_dict['AWS_ACCESS_KEY_ID']
+    os.environ['AWS_SECRET_ACCESS_KEY'] = secret_dict['AWS_SECRET_ACCESS_KEY']
+    os.environ['DB_HOST'] = secret_dict['DB_HOST']
+    os.environ['DB_PORT'] = secret_dict['DB_PORT']
+    os.environ['DB_NAME'] = secret_dict['DB_NAME']
+    os.environ['DB_USER'] = secret_dict['DB_USER']
+    os.environ['DB_PASSWORD'] = secret_dict['DB_PASSWORD']
+    os.environ['S3_BUCKET_NAME'] = secret_dict['S3_BUCKET_NAME']
+
+except Exception as e:
+    print(f"Error fetching secret: {str(e)}")
+    raise e
+
+# Continue with the rest of your code...
 
 # Load environment variables
-load_dotenv()
+# Removed this part as secrets are fetched from AWS Secrets Manager now
 
 app = Flask(__name__)
 CORS(app)
