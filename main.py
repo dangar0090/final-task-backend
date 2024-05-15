@@ -1,11 +1,12 @@
 import os
 import json
-import boto3
 import logging
+from io import BytesIO
 from flask import Flask, request, jsonify
 import psycopg2
 from psycopg2 import sql, errors
 from flask_cors import CORS
+import boto3
 from botocore.exceptions import ClientError
 
 # Initialize Flask app
@@ -49,9 +50,7 @@ try:
 except Exception as e:
     logger.error("Error setting up environment variables: {}".format(str(e)))
     raise e
-#AWS S3 Configuration    
-region_name = os.getenv('REGION_NAME')
-bucket_name = os.getenv('S3_BUCKET_NAME')
+
 # Database configuration
 conn = psycopg2.connect(
     host=os.getenv('DB_HOST'),
@@ -104,8 +103,17 @@ def upload_file():
         # Check if the file extension is allowed
         if file_extension.lower() not in ALLOWED_EXTENSIONS:
             return jsonify({"error": f"Extension '{file_extension}' is not allowed"}), 400
-        # Upload to S3
-        s3.upload_fileobj(file, bucket_name, file.filename)
+        
+        # Create a BytesIO object to hold the file contents
+        file_stream = BytesIO()
+        file.save(file_stream)
+        file_stream.seek(0)  # Move the cursor to the beginning of the stream
+        
+        # Upload file directly to S3
+        s3_client = boto3.client('s3')
+        bucket_name = os.getenv('S3_BUCKET_NAME')
+        s3_client.upload_fileobj(file_stream, bucket_name, file.filename)
+        
         # Insert into DB
         try:
             cursor.execute(
@@ -120,10 +128,10 @@ def upload_file():
             return jsonify({"error": "Duplicate filename found"}), 409
         except Exception as db_error:
             conn.rollback()
-            app.logger.error(f"Database error: {str(db_error)}")
+            logger.error(f"Database error: {str(db_error)}")
             return jsonify({"error": str(db_error)}), 500
     except Exception as e:
-        app.logger.error(f"Error uploading file: {str(e)}")
+        logger.error(f"Error uploading file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
